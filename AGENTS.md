@@ -38,6 +38,8 @@
 ## Git 與 Agent 協作
 開發任務使用 Agent 專屬 Worktree，例如 `git worktree add .worktrees/codex -b codex/task-name`。啟用 `extensions.worktreeConfig` 後，以 `git config --worktree` 設定專屬 `user.name`、`user.email`，避免改寫共用身分。保留使用者既有未提交變更，不將其納入自己的提交。
 
+Agent可以在專屬的worktree內commit修改。
+
 開始任務與里程碑完成時檢查相對 `main` 的基線；需要時在乾淨的工作分支 rebase，完成後重新驗證。Agent 不得自行合併至 `main`；交付變更摘要、驗證結果，以及供人工審核後執行的指令，例如 `git merge --no-ff codex/task-name -m "feat(dashboard): add monthly summary"`。
 
 提交訊息採 Conventional Commits，延續既有 `feat: financial dashboard v1` 慣例。PR 說明行為變更、關聯議題與驗證結果；UI 變更附截圖。
