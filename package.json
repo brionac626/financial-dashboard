@@ -9,7 +9,9 @@
     "check": "astro check",
     "build": "astro check && astro build",
     "preview": "astro preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:template": "node tests/run-template-test.mjs",
+    "test:fixtures": "node tests/generate-fixtures.mjs"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.10",

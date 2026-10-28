@@ -1,29 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowRight, BarChart3, CalendarDays, Check, ChevronRight, CircleHelp, FileSpreadsheet, FolderOpen, LayoutDashboard, LockKeyhole, Plus, ShieldCheck, Trash2, TrendingUp, UploadCloud, Wallet } from 'lucide-react';
-import ImportWorker from '@/lib/import.worker?worker';
+import { ArrowRight, BarChart3, CalendarDays, Check, ChevronRight, CircleHelp, FileSpreadsheet, FolderOpen, LayoutDashboard, LockKeyhole, Plus, ShieldCheck, Trash2, TrendingUp, UploadCloud, Wallet } from 'lucide-react';
+import { parseInWorker } from '@/lib/import-client';
 import { Modal } from '@/components/common/Modal';
+import { CategoryTag } from '@/components/common/CategoryTag';
+import { FinancialSummarySection } from '@/components/islands/FinancialSummary';
 import { CategoryChart, TrendChart } from '@/components/islands/Charts';
 import { categoryColors, categoryLabels } from '@/config/site.config';
-import { categories, emptyData, mergeImports, money, monthLabel, numberFormat, totals, trendData } from '@/lib/finance';
+import { categories, cumulativeTotals, emptyData, mergeImports, money, monthLabel, totals, trendData } from '@/lib/finance';
 import { clearData, loadData, saveData } from '@/lib/storage';
 import type { Category, ImportResult, StoredData } from '@/types/finance';
-
-function parseInWorker(file: File): Promise<ImportResult> {
-  const id = crypto.randomUUID();
-  const failure = (message: string): ImportResult => ({ id, source: file.name, months: [], errors: [message], notes: [] });
-  if (!file.name.toLowerCase().endsWith('.xlsx')) return Promise.resolve(failure('僅支援 .xlsx 檔案。'));
-  if (file.size > 10 * 1024 * 1024) return Promise.resolve(failure('單一檔案不可超過 10 MB。'));
-  return new Promise(resolve => {
-    let worker: Worker;
-    try { worker = new ImportWorker(); }
-    catch { resolve(failure('無法啟動檔案解析，請確認瀏覽器支援 Web Worker。')); return; }
-    const finish = (result: ImportResult) => { clearTimeout(timeout); worker.terminate(); resolve(result); };
-    const timeout = window.setTimeout(() => finish(failure('解析逾時，請確認檔案內容或減少資料量。')), 20000);
-    worker.onmessage = (event: MessageEvent<ImportResult>) => finish(event.data);
-    worker.onerror = () => finish(failure('解析失敗，請確認檔案完整且沒有加密。'));
-    file.arrayBuffer().then(buffer => worker.postMessage({ buffer, source: file.name, id }, [buffer])).catch(() => finish(failure('無法讀取檔案，請重新選取。')));
-  });
-}
 
 export function Dashboard() {
   const [data, setData] = useState<StoredData>(emptyData);
@@ -66,10 +51,11 @@ export function Dashboard() {
   }
   const current = data.months.find(item => item.month === data.preferences.month) ?? data.months.at(-1);
   const summary = current ? totals(current) : null;
+  const historySummary = cumulativeTotals(data.months);
   const previous = current ? data.months.filter(item => item.month < current.month).at(-1) : undefined;
   const previousSummary = previous ? totals(previous) : null;
   const insurance = data.insurance.find(item => item.id === data.preferences.insuranceId) ?? data.insurance.at(-1);
-  const insuranceCounts = ['人壽保險', '產物保險', '政府保險'].map((name, index) => ({ name, value: insurance?.records.filter(item => item.category === name).length ?? 0, color: ['#177b69', '#80a18c', '#c18660'][index] }));
+  const insuranceCounts = ['人壽保險', '產物保險', '政府保險'].map((name, index) => ({ name, value: insurance?.records.filter(item => item.category === name).length ?? 0, color: ['#177b69', '#80a18c', 'var(--color-liability)'][index] }));
   const period = data.months.length ? `${data.months[0].month} — ${data.months.at(-1)?.month}` : '尚未建立財務紀錄';
   const selectedResults = results?.filter(result => chosen.includes(result.id)) ?? [];
   const projected = mergeImports(data, selectedResults);
@@ -85,11 +71,8 @@ export function Dashboard() {
     setData(emptyData()); setWarning(''); setWritable(true); setResults(null); setChosen([]); setTab('overview'); setFilter('all'); setConfirmClear(false); setMessage('已清除所有財務與保險紀錄。');
     if (inputRef.current) inputRef.current.value = '';
   }
-  const cards = [
-    { label: '總資產', english: 'TOTAL ASSETS', value: summary?.assets, previous: previousSummary?.assets, icon: Wallet, className: '' },
-    { label: '總負債', english: 'TOTAL LIABILITIES', value: summary?.liabilities, previous: previousSummary?.liabilities, icon: ArrowDownToLine, className: '' },
-    { label: '資產淨值', english: 'NET WORTH', value: summary?.netWorth, previous: previousSummary?.netWorth, icon: TrendingUp, className: 'featured' },
-  ];
+
+  const monthControl = <label className="month-select"><CalendarDays size={16} /><span>報表月份</span><select value={current?.month ?? ''} disabled={!current} onChange={event => commit({ ...data, preferences: { ...data.preferences, month: event.target.value } })}>{!current && <option value="">選擇月份</option>}{[...data.months].reverse().map(item => <option key={item.month} value={item.month}>{monthLabel(item.month)}</option>)}</select></label>;
   return <>
     <header className="site-header"><div className="header-inner">
       <a href="#main" className="brand"><span className="brand-mark"><BarChart3 size={23} /></span><span>家計<span className="brand-en">FINANCIAL DASHBOARD</span></span></a>
@@ -105,20 +88,22 @@ export function Dashboard() {
       {warning && <div className="notice warning" role="alert">{warning}</div>}
       <div className="live-message" role="status" aria-live="polite">{message}</div>
       <div className="toolbar"><nav aria-label="報表檢視" className="tabs">{([{ key: 'overview', label: '財務總覽', icon: LayoutDashboard }, { key: 'accounts', label: '帳戶明細', icon: Wallet }, { key: 'insurance', label: '保險概況', icon: ShieldCheck }] as const).map(item => <button key={item.key} aria-current={tab === item.key ? 'page' : undefined} className={tab === item.key ? 'active' : ''} onClick={() => setTab(item.key)}><item.icon size={17} />{item.label}</button>)}</nav>
-        <label className="month-select"><CalendarDays size={16} /><span className="sr-only">報表月份</span><select value={current?.month ?? ''} disabled={!current} onChange={event => commit({ ...data, preferences: { ...data.preferences, month: event.target.value } })}>{!current && <option value="">選擇月份</option>}{[...data.months].reverse().map(item => <option key={item.month} value={item.month}>{monthLabel(item.month)}</option>)}</select></label>
+
       </div>
       {tab === 'overview' && <>
-        <section className="metric-grid" aria-label="財務摘要">{cards.map(card => <article className={`metric-card ${card.className}`} key={card.label}><div className="metric-heading"><span>{card.label}</span><card.icon size={19} /></div><span className="metric-value">{card.value === undefined ? '—' : <><small>NT$</small>{numberFormat.format(card.value)}</>}</span><div className="metric-bottom">{card.value !== undefined && card.previous !== undefined && previous ? <span>較 {previous.month} <strong>{card.value - card.previous >= 0 ? '+' : ''}{money(card.value - card.previous)}</strong></span> : <span>{current ? '累積更多月份，查看資產變化' : '等待匯入你的第一份紀錄'}</span>}</div><span className="metric-english">{card.english}</span></article>)}<article className="metric-card"><div className="metric-heading"><span>負債占資產</span><BarChart3 size={19} /></div><span className="metric-value">{summary ? summary.debtRatio === null ? '無法計算' : `${summary.debtRatio.toFixed(1)}%` : '—'}</span><div className="ratio-track"><div style={{ width: `${Math.min(100, Math.max(0, summary?.debtRatio ?? 0))}%` }} /></div><span className="metric-english">DEBT TO ASSETS</span></article></section>
+        <FinancialSummarySection id="history" title="歷史累計統計" period={data.months.length ? `${period} · ${data.months.length} 個有效月份` : '尚無有效月份'} note="各月餘額加總，同一資產可能重複計入。" summary={historySummary} />
+        <FinancialSummarySection id="monthly" title={current ? `當月統計｜${monthLabel(current.month)}` : '當月統計'} period={current ? `${monthLabel(current.month)} · 月底餘額` : '請選擇報表月份'} note="本區僅呈現所選月份的統計資訊。" summary={summary} previous={previousSummary} previousMonth={previous?.month} control={monthControl} />
         {!current && <section className="upload-panel">
           <div className="upload-copy"><span className="section-kicker">從一份紀錄開始</span><h2>讓你的 Excel，<br />變成看得懂的財務全貌。</h2><p>匯入家庭資產負債表，將每月餘額整理為圖表。<br className="desktop-break" />多份年度紀錄，也能串起長期的資產變化。</p><div className="upload-features"><span><Check size={15} />支援多份檔案</span><span><Check size={15} />不需註冊帳號</span></div></div>
           <div className="drop-target"><div className="file-icon"><FileSpreadsheet size={32} strokeWidth={1.4} /></div><h3>{busy ? '正在解析你的檔案…' : '將 Excel 拖曳至這裡'}</h3><p>或從你的裝置選擇檔案</p><button className="button primary" disabled={!ready || busy} onClick={chooseFiles}><UploadCloud size={17} />選擇 Excel 檔案<ArrowRight size={16} /></button><small>.xlsx 格式 · 每份上限 10 MB · 每次最多 20 份</small></div>
         </section>}
-        <section className="panel trend-panel"><div className="panel-heading"><div><h2>資產變化趨勢</h2><p>{current ? `${period} · ${data.months.length} 個月份的累積` : '讓每個月的努力，都有跡可循'}</p></div><div className="chart-legend"><span><i style={{ background: '#177b69' }} />總資產</span><span><i style={{ background: '#80a18c' }} />淨值</span><span><i style={{ background: '#c18660' }} />總負債</span></div></div>
+        <section className="panel trend-panel"><div className="panel-heading"><div><h2>資產變化趨勢</h2><p>{current ? `${period} · ${data.months.length} 個月份的累積` : '讓每個月的努力，都有跡可循'}</p></div><div className="chart-legend"><span><i style={{ background: '#177b69' }} />總資產</span><span><i style={{ background: '#80a18c' }} />淨值</span><span><i style={{ background: 'var(--color-liability)' }} />總負債</span></div></div>
           {current ? <><TrendChart months={data.months} /><details className="data-details"><summary>查看圖表資料表</summary><div className="table-scroll"><table><caption className="sr-only">每月資產、負債與淨值</caption><thead><tr><th>年月</th><th>總資產</th><th>總負債</th><th>淨值</th></tr></thead><tbody>{trendData(data.months).map(row => <tr key={row.month}><td>{row.month}</td><td>{row.assets === null ? '無紀錄' : money(row.assets)}</td><td>{row.liabilities === null ? '無紀錄' : money(row.liabilities)}</td><td>{row.netWorth === null ? '無紀錄' : money(row.netWorth)}</td></tr>)}</tbody></table></div></details></> : <div className="empty-chart"><div className="empty-grid" /><div className="empty-chart-copy"><TrendingUp size={26} /><strong>你的財務軌跡，從這裡開始</strong><span>匯入至少一個月份，即可查看趨勢圖</span></div></div>}
         </section>
-        <div className="two-columns">{[{ title: '資產配置', subtitle: '每一份資產，各有其位置', keys: categories.slice(0, 3) }, { title: '負債結構', subtitle: '看清負債組成，掌握財務現況', keys: categories.slice(3) }].map(section => <section className="panel" key={section.title}><div className="panel-heading"><div><h2>{section.title}</h2><p>{section.subtitle}</p></div><span className="unit-label">TWD</span></div>{summary ? <><CategoryChart data={chartRows(section.keys)} /><dl className="category-values">{section.keys.map(key => <div key={key}><dt><i style={{ background: categoryColors[key] }} />{categoryLabels[key]}</dt><dd>{money(summary.grouped[key])}</dd></div>)}</dl></> : <div className="small-empty"><BarChart3 size={28} /><p>匯入後，查看{section.title}</p><span>依照 Excel 的資產負債分類自動整理</span></div>}</section>)}</div>
+        <div className="two-columns">{[{ title: '資產配置', subtitle: '每一份資產，各有其位置', keys: categories.slice(0, 3) }, { title: '負債結構', subtitle: '看清負債組成，掌握財務現況', keys: categories.slice(3) }].map(section => <section className="panel" key={section.title}><div className="panel-heading"><div><h2>{current ? `${monthLabel(current.month)} · ${section.title}` : `當月${section.title}`}</h2><p>{section.subtitle}</p></div><span className="unit-label">TWD</span></div>{summary ? <><CategoryChart data={chartRows(section.keys)} /><dl className="category-values">{section.keys.map(key => <div key={key}><dt><i style={{ background: categoryColors[key] }} />{categoryLabels[key]}</dt><dd>{money(summary.grouped[key])}</dd></div>)}</dl></> : <div className="small-empty"><BarChart3 size={28} /><p>匯入後，查看{section.title}</p><span>依照 Excel 的資產負債分類自動整理</span></div>}</section>)}</div>
       </>}
-      {tab === 'accounts' && <section className="panel"><div className="panel-heading"><div><h2>帳戶明細</h2><p>{current ? `${monthLabel(current.month)} · 來源：${current.source}` : '按月份查看各帳戶的餘額與用途'}</p></div><label><span className="sr-only">篩選分類</span><select className="select" value={filter} onChange={event => setFilter(event.target.value as Category | 'all')}><option value="all">所有分類</option>{categories.map(key => <option key={key} value={key}>{categoryLabels[key]}</option>)}</select></label></div>{current ? <div className="table-scroll"><table><caption className="sr-only">帳戶分類、用途與金額</caption><thead><tr><th>類型</th><th>帳戶</th><th>功能</th><th>目標／用途</th><th className="numeric">金額（TWD）</th></tr></thead><tbody>{current.accounts.filter(account => filter === 'all' || account.category === filter).map(account => <tr key={account.id}><td><span className="category-tag">{categoryLabels[account.category]}</span></td><th scope="row">{account.account}</th><td>{account.purpose || '—'}</td><td>{account.goal || '—'}</td><td className="numeric">{money(account.amount)}</td></tr>)}</tbody></table></div> : <EmptySection onImport={chooseFiles} disabled={!ready || busy} text="尚無帳戶資料" />}</section>}
+      {tab === 'accounts' && <div className="account-month-control">{monthControl}</div>}
+      {tab === 'accounts' && <section className="panel"><div className="panel-heading"><div><h2>帳戶明細</h2><p>{current ? `${monthLabel(current.month)} · 來源：${current.source}` : '按月份查看各帳戶的餘額與用途'}</p></div><label><span className="sr-only">篩選分類</span><select className="select" value={filter} onChange={event => setFilter(event.target.value as Category | 'all')}><option value="all">所有分類</option>{categories.map(key => <option key={key} value={key}>{categoryLabels[key]}</option>)}</select></label></div>{current ? <div className="table-scroll"><table><caption className="sr-only">帳戶分類、用途與金額</caption><thead><tr><th>類型</th><th>帳戶</th><th>功能</th><th>目標／用途</th><th className="numeric">金額（TWD）</th></tr></thead><tbody>{current.accounts.filter(account => filter === 'all' || account.category === filter).map(account => <tr key={account.id}><td><CategoryTag category={account.category} /></td><th scope="row">{account.account}</th><td>{account.purpose || '—'}</td><td>{account.goal || '—'}</td><td className="numeric">{money(account.amount)}</td></tr>)}</tbody></table></div> : <EmptySection onImport={chooseFiles} disabled={!ready || busy} text="尚無帳戶資料" />}</section>}
       {tab === 'insurance' && <section className="panel"><div className="panel-heading insurance-heading"><div><h2>保險概況</h2><p>依來源檔案獨立保存，保費以原始填寫金額呈現。</p></div>{insurance && <label><span className="sr-only">保險來源檔案</span><select className="select insurance-select" value={insurance.id} onChange={event => commit({ ...data, preferences: { ...data.preferences, insuranceId: event.target.value } })}>{data.insurance.map((snapshot, index) => <option key={snapshot.id} value={snapshot.id}>{index + 1}. {snapshot.source}</option>)}</select></label>}</div>{insurance ? <><div className="insurance-summary"><div><span className="section-kicker">已填寫的保障紀錄</span><strong>{insurance.records.length}<small>筆</small></strong><p>保費週期未定義，不加總、不年化。</p></div><CategoryChart data={insuranceCounts} count /><dl className="category-values">{insuranceCounts.map(item => <div key={item.name}><dt>{item.name}</dt><dd>{item.value} 筆</dd></div>)}</dl></div>{insuranceCounts.filter(item => item.value > 0).map(group => { const records = insurance.records.filter(record => record.category === group.name); const fields = [...new Set(records.flatMap(record => Object.keys(record.fields)))]; return <div className="insurance-group" key={group.name}><h3>{group.name}<span>{records.length} 筆紀錄</span></h3><div className="table-scroll"><table><caption className="sr-only">{group.name}原始保單明細</caption><thead><tr><th>種類</th>{group.name === '人壽保險' && <th>保單區段</th>}{fields.map(field => <th key={field}>{field === '保費' ? '保費（原始金額）' : field}</th>)}</tr></thead><tbody>{records.map((record, index) => <tr key={index}><th scope="row">{record.kind}</th>{group.name === '人壽保險' && <td>{record.holder || '—'}</td>}{fields.map(field => <td key={field}>{record.fields[field] || '—'}</td>)}</tr>)}</tbody></table></div></div>; })}</> : <EmptySection onImport={chooseFiles} disabled={!ready || busy} text="尚無已填寫的保險紀錄" />}</section>}
       <section className="bottom-guide"><div className="guide-icon"><FolderOpen size={21} /></div><div><h3>把每個月，串成更長遠的視野。</h3><p>可持續加入不同年份的 Excel；重複月份會保留原紀錄，不覆蓋既有資料。</p></div><button className="text-button" onClick={() => setHelp(true)}>了解匯入規則<ChevronRight size={16} /></button></section>
       <footer className="footer"><span>家計 <span className="footer-divider">/</span> 把財務整理好，把生活留給自己。</span><span><LockKeyhole size={13} />本機儲存 · 無帳號 · 無雲端上傳</span></footer>

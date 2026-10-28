@@ -10,6 +10,9 @@ export const categoryLabels = {
   nonCurrentLiability: '非流動負債',
 } as const;
 export const categoryColors = {
-  cash: '#177b69', investment: '#75a999', nonCurrentAsset: '#b1c8bb',
-  currentLiability: '#c18660', nonCurrentLiability: '#d8b99b',
+  cash: 'var(--color-category-cash)',
+  investment: 'var(--color-category-investment)',
+  nonCurrentAsset: 'var(--color-category-non-current-asset)',
+  currentLiability: 'var(--color-category-current-liability)',
+  nonCurrentLiability: 'var(--color-category-non-current-liability)',
 } as const;

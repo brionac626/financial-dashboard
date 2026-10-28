@@ -1,4 +1,4 @@
-import type { Category, ImportResult, MonthlySnapshot, StoredData } from '@/types/finance';
+import type { BalanceComposition, Category, FinancialSummary, ImportResult, MonthlySnapshot, StoredData } from '@/types/finance';
 
 export const categories: Category[] = ['cash', 'investment', 'nonCurrentAsset', 'currentLiability', 'nonCurrentLiability'];
 export const emptyData = (): StoredData => ({ version: 1, months: [], insurance: [], preferences: { month: '', insuranceId: '' } });
@@ -6,12 +6,34 @@ export const numberFormat = new Intl.NumberFormat('zh-TW', { maximumFractionDigi
 export const money = (amount: number) => `${amount < 0 ? '-' : ''}NT$${numberFormat.format(Math.abs(amount))}`;
 export const compactMoney = (amount: number) => Math.abs(amount) >= 10000 ? `${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 1 }).format(amount / 10000)}萬` : new Intl.NumberFormat('zh-TW').format(amount);
 export const monthLabel = (month: string) => `${month.slice(0, 4)} 年 ${Number(month.slice(5))} 月`;
-export function totals(snapshot: MonthlySnapshot) {
-  const grouped = Object.fromEntries(categories.map(key => [key, 0])) as Record<Category, number>;
-  for (const account of snapshot.accounts) grouped[account.category] += account.amount;
+function summarize(grouped: Record<Category, number>): FinancialSummary {
   const assets = grouped.cash + grouped.investment + grouped.nonCurrentAsset;
   const liabilities = grouped.currentLiability + grouped.nonCurrentLiability;
   return { grouped, assets, liabilities, netWorth: assets - liabilities, debtRatio: assets === 0 ? null : liabilities / assets * 100 };
+}
+export function totals(snapshot: MonthlySnapshot): FinancialSummary {
+  const grouped = Object.fromEntries(categories.map(key => [key, 0])) as Record<Category, number>;
+  for (const account of snapshot.accounts) grouped[account.category] += account.amount;
+  return summarize(grouped);
+}
+export function cumulativeTotals(months: MonthlySnapshot[]): FinancialSummary | null {
+  if (!months.length) return null;
+  const grouped = Object.fromEntries(categories.map(key => [key, 0])) as Record<Category, number>;
+  for (const month of months) {
+    const monthly = totals(month);
+    for (const category of categories) grouped[category] += monthly.grouped[category];
+  }
+  return summarize(grouped);
+}
+export function balanceComposition(summary: FinancialSummary | null): BalanceComposition {
+  if (!summary) return { state: 'empty', items: [] };
+  const { assets, liabilities } = summary;
+  const combined = assets + liabilities;
+  const state = assets < 0 || liabilities < 0 ? 'negative' : combined === 0 ? 'zero' : 'ready';
+  return { state, items: [
+    { name: '總資產', value: assets, percentage: state === 'ready' ? assets / combined * 100 : null, fill: '#177b69' },
+    { name: '總負債', value: liabilities, percentage: state === 'ready' ? liabilities / combined * 100 : null, fill: 'var(--color-liability)' },
+  ] };
 }
 export function mergeImports(data: StoredData, results: ImportResult[]) {
   const months = new Map(data.months.map(month => [month.month, month]));
