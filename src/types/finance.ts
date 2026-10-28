@@ -12,6 +12,17 @@ export interface MonthlySnapshot {
   source: string;
   accounts: AccountBalance[];
 }
+export interface FinancialSummary {
+  grouped: Record<Category, number>;
+  assets: number;
+  liabilities: number;
+  netWorth: number;
+  debtRatio: number | null;
+}
+export interface BalanceComposition {
+  state: 'ready' | 'empty' | 'zero' | 'negative';
+  items: { name: string; value: number; percentage: number | null; fill: string }[];
+}
 export type InsuranceCategory = '人壽保險' | '產物保險' | '政府保險';
 export interface InsuranceRecord {
   category: InsuranceCategory;
@@ -38,4 +49,10 @@ export interface StoredData {
   months: MonthlySnapshot[];
   insurance: InsuranceSnapshot[];
   preferences: { month: string; insuranceId: string };
+}
+
+export interface ImportWorkerRequest {
+  buffer: ArrayBuffer;
+  source: string;
+  id: string;
 }

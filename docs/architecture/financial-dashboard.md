@@ -16,6 +16,24 @@ Astro 輸出靜態 HTML，單一 `Dashboard` React island 使用 `client:load` �
 
 財務摘要由明細即時計算，不保存衍生總額。缺漏月份產生 `null` 趨勢點，避免暗示不存在的觀測值。保險沒有年份／月份趨勢，亦無年化保費。
 
+### 摘要分區與組成圖
+
+`FinancialSummary` 統一分類總額、資產、負債、淨值及資產負債比；`cumulativeTotals` 加總所有有效月份後計算衍生值，沒有資料時傳回 null。`balanceComposition` 以資產與負債合計為圓餅分母，明確區分 empty、zero、negative、ready 狀態。
+
+`FinancialSummarySection` 共用四卡與 `BalancePieChart`；歷史區不讀取月份偏好，當月區使用既有選取月份。歷史區標示期間、月份數與重複計入說明；當月標題、放大選單、分類圖標題標明時間範圍。總負債使用右上槌頭／左下槌柄的 SVG 圖示，比例使用 Percent 圖示。儲存版本與匯入格式不變。
+
+摘要新增測試涵蓋跨年累計、總額比例、選月獨立性、匯入／重複／清除、圓餅分母、單一有效扇區與零負值；圖表保留可讀的真實金額及比例明細。
+
+### 共用配色與負淨值狀態
+
+全域 `:root` 定義 `--color-category-cash`、`--color-category-investment`、`--color-category-non-current-asset`、`--color-category-current-liability`、`--color-category-non-current-liability`。`--color-liability` 指向流動負債色，`--color-on-liability` 定義深色文字。`categoryColors` 只引用 CSS 變數；共用 `CategoryTag` 與長條圖、分類圖例使用同一來源。
+
+歷史／當月摘要各自依 `netWorth < 0` 套用 `is-negative`，將淨值卡片背景與邊框換成共用負債色，文字改深色，且只水平翻轉淨值趨勢圖示。零、正值及無資料保持綠色。圓餅圖、趨勢圖及其圖例、比例條均引用共用負債色。
+
+配色驗證：以暫時的隔離頁面呈現實際共用元件，確認歷史正值與當月負值可獨立顯示，負值圖示 computed transform 為 `matrix(-1, 0, 0, 1, 0, 0)`，切換零／正值恢復 `none`，無資料仍為綠色。五種 tag 的 computed 背景與 SVG 長條填色一致；透過測試按鈕修改根元素的分類負債變數，卡片、圓餅、比例條與 tag 同步改色，再還原原色。深色標籤文字對四個淺色背景對比均超過 4.5:1，負值卡片文字對比約 4.96:1。320px／390px 無整頁水平溢出，控制台無 warning/error。隔離頁與測試元件於驗證後移除，不包含在正式網站。
+
+摘要更新驗證：37 項測試通過，Astro 型別檢查零錯誤／警告。以 12 個合成月份實測累計資產 96,378,000、負債 44,628,000、淨值 51,750,000、資產負債比 46.3%，圓餅占比為 68.4%／31.6%。切換至 2024-01 時累計保持固定，當月資產為 7,850,000、負債為 3,818,000。選單經 DOM 確認字體 18px、控制高度 48px，ArrowUp 可選月；320px、390px 無整頁水平溢出，圖示方向符合需求，控制台無 warning/error。清除後兩組摘要均回到無資料狀態。
+
 ## UI 與可用性
 
 繁體中文、TWD、淺色綠系儀表板。三個檢視為財務總覽、帳戶明細與保險概況。月份選擇套用財務資料；保險選擇以來源為準。
@@ -46,3 +64,24 @@ Astro 輸出靜態 HTML，單一 `Dashboard` React island 使用 `client:load` �
 - QA 檔案可用 `node tests/generate-fixtures.mjs` 重建，位於忽略的 `tests/.generated/`，不隨網站發布。
 - 原始碼檢查未包含 fetch、XMLHttpRequest、sendBeacon 或外部資源載入；靜態輸出不含任何 xlsx。瀏覽器工具未提供網路流量擷取，因此此項以來源及打包內容稽核驗證。
 - 正式 `astro preview` 版本實測 Worker 匯入、6 個月份與保險呈現，摘要總資產 8,015,000、負債 3,728,000、淨值 4,287,000 與合成資料相符；控制台無 warning/error，測試資料已清除。
+
+
+## 規範修正（2026-10-28）
+
+- Worker 生命週期移至 `src/lib/import-client.ts`，介面維持 `File → Promise<ImportResult>`；`ImportWorkerRequest` 集中於共用型別。10 MB、20 秒、transfer list 與錯誤文案維持既有行為；完成後僅釋放一次，逾時後不再傳送遲到的 buffer。
+- CSS 改以 320px 為基底，透過 361、761、1001、1500px 的 `min-width` 規則向上擴展，保留焦點、表格捲動與 reduced-motion。
+- 預設單元測試與 QA 產生器共用合成工作簿，不依賴根目錄 Excel。獨立相容性測試以 `FINANCE_TEMPLATE_PATH` 指定原始空白範本，缺少設定或檔案時明確失敗。
+- 此次修改在 `.worktrees/codex`／`codex/guideline-compliance` 進行，原始未提交檔案備份於忽略的 `.worktrees/baseline/`。沒有自動提交既有變更或合併主線。
+
+
+### 本次修正驗證結果
+
+- 46 項預設測試通過；正式建置成功，Astro／TypeScript 零錯誤、警告與提示。
+- 不含任何根目錄 Excel 的乾淨來源快照（`.worktrees/clean-check/`）可執行預設測試及 QA 產生器。這是未提交來源的檔案匯出，並非已提交版本的 clone；依賴沿用本機已安裝版本。
+- 指定原始空白範本的相容性測試通過；缺少環境變數與指定不存在檔案兩種情境均明確失敗。
+- 正式靜態預覽實測兩份年度合成檔與一份損壞檔，匯入 6 個月份及 2 份保險快照；損壞檔獨立拒絕。月份切換、重載恢復、清除確認均正常。
+- 另外匯入零值與負值合成檔，確認零值不繪圓餅且比例顯示無法計算，負值保留原始金額並顯示不適用圓餅圖；空資料提示正常。
+- 財務總覽、帳戶明細、保險概況在 320、390、760、761、1000、1001、1500px 的 scrollWidth 均等於 clientWidth，沒有整頁水平溢出。手機截圖保留於忽略的 `tests/.generated/mobile-compliance.png`。
+- Tab 焦點留在說明對話框，Escape 關閉後返回「使用說明」按鈕。正式預覽控制台未觀察到 warning/error，測試紀錄已透過清除按鈕移除。
+- 來源稽核未發現 fetch、XMLHttpRequest、sendBeacon、外部 URL 或明確 any；正式輸出不含 xlsx。瀏覽器工具未提供完整網路擷取，本次不宣稱完成封包層驗證。
+- 本機測試借用上層 node_modules，Vite 開發模式會阻擋跨 Worktree 依賴路徑；本次 UI 驗證使用正式 preview。新 checkout 應依 README 在自身目錄安裝依賴。
