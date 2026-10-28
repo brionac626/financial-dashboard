@@ -23,7 +23,7 @@
 | `npm run build` | 型別檢查並產生 `dist/` |
 | `npm run preview` | 預覽建置成果 |
 
-Cloudflare Pages 採 Direct Upload；`.github/workflows/deploy.yml` 於 main 推送或從 main 手動觸發時部署，PR 僅驗證。`scripts/deploy-remote.ps1`／`.sh` 執行測試、建置與發布，支援 DryRun；`scripts/deploy-local.ps1`／`.sh` 重新建置並啟動本機 Pages 預覽。設定見 `wrangler.jsonc`，Wrangler 版本固定於 lockfile。執行 `npm run test:deploy` 驗證腳本；首次建立專案、憑證及使用方式見 README。沒有 Makefile。修改部署流程須同步更新文件，禁止於離線驗證實際上傳。
+Cloudflare Pages 採 Direct Upload；`.github/workflows/deploy.yml` 於 main 推送或從 main 手動觸發時部署，PR 僅驗證。`scripts/setup-pages.ps1`／`.sh` 首次建立 main 正式分支的專案；`scripts/deploy-remote.ps1`／`.sh` 執行測試、建置與發布，兩者均支援 DryRun 並透過共用 Node 執行器讀取根目錄 `.env`（非空白終端變數優先）。只採用三個 Cloudflare 設定，憑證僅傳給 Wrangler 子程序，不寫入命令列或終端輸出。GitHub Actions 維持使用 Secrets。`scripts/deploy-local.ps1`／`.sh` 重新建置並啟動本機 Pages 預覽，不新增憑證載入需求。設定見 `wrangler.jsonc`，Wrangler 版本固定於 lockfile。執行 `npm run test:deploy` 驗證腳本；首次建立專案、憑證及使用方式見 README。沒有 Makefile。修改部署流程須同步更新文件，禁止於離線驗證實際建立雲端專案或上傳。
 
 ## 編碼與引用規範
 使用兩空白縮排、TypeScript 單引號與分號，禁止新增 `any`。元件使用 PascalCase，函式與變數使用 camelCase；共用型別集中於 `src/types/`，計算邏輯與 UI 分離。
