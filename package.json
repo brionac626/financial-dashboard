@@ -11,7 +11,8 @@
     "preview": "astro preview",
     "test": "vitest run",
     "test:template": "node tests/run-template-test.mjs",
-    "test:fixtures": "node tests/generate-fixtures.mjs"
+    "test:fixtures": "node tests/generate-fixtures.mjs",
+    "test:deploy": "node --test tests/deployment.test.mjs"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.10",
@@ -30,6 +31,7 @@
     "@types/node": "^24.19.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wrangler": "4.154.0"
   }
 }
