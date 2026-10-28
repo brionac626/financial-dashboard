@@ -30,7 +30,122 @@ Remove-Item Env:FINANCE_TEMPLATE_PATH
 
 `test:template` 獨立執行相容性測試；未設定環境變數、路徑不存在或內容不符時均會失敗。正式資料處理與儲存格式不受測試資料調整影響。
 
-使用 Node.js 24。建置結果可由一般靜態伺服器提供，本專案未執行部署。
+使用 Node.js 24。建置結果可由一般靜態伺服器提供。Cloudflare Pages 設定與跨平台腳本已備妥，首次部署前請依下列指引設定；本次程式交付未建立雲端專案或實際發布。
+
+## 部署至 Cloudflare Pages
+
+採用 [Direct Upload 與 GitHub Actions](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/)，上傳已建置的 `dist/`。這是純靜態網站，不需要 Astro Cloudflare adapter、Pages Functions 或後端資料庫。Wrangler 為固定版本的開發依賴，CI 與本機均直接呼叫專案內的 CLI，避免 npx 臨時下載不同版本。
+
+### 1. 工具與首次建立專案
+
+準備 Node.js 24、Git；Windows 使用 PowerShell 7，Linux 使用 Bash。從乾淨 checkout 安裝含開發依賴的 lockfile：
+
+```sh
+npm ci --allow-remote=root
+```
+
+在 Cloudflare 建立僅限目標帳號的 API Token，權限為 **Account → Cloudflare Pages → Edit**，並取得該帳號的 Account ID。這兩項只用於部署程序，不放入 `PUBLIC_*` 變數、前端程式或提交檔案。
+
+設定本次終端工作階段憑證。Windows 可隱藏輸入 Token：
+
+```powershell
+$env:CLOUDFLARE_ACCOUNT_ID = Read-Host 'Cloudflare Account ID'
+$env:CLOUDFLARE_API_TOKEN = Read-Host 'Cloudflare API Token' -MaskInput
+# 選用：既有專案或名稱已被占用時使用實際名稱
+$env:CLOUDFLARE_PROJECT_NAME = 'financial-dashboard'
+node node_modules/wrangler/bin/wrangler.js pages project create $env:CLOUDFLARE_PROJECT_NAME --production-branch main
+```
+
+Linux：
+
+```bash
+read -r -p 'Cloudflare Account ID: ' CLOUDFLARE_ACCOUNT_ID
+read -r -s -p 'Cloudflare API Token: ' CLOUDFLARE_API_TOKEN; printf '\n'
+export CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN
+export CLOUDFLARE_PROJECT_NAME=financial-dashboard
+node node_modules/wrangler/bin/wrangler.js pages project create "$CLOUDFLARE_PROJECT_NAME" --production-branch main
+```
+
+此建立命令只需執行一次；已有 Direct Upload 專案則略過，確認其正式分支為 `main`。`wrangler.jsonc` 的預設名稱為 `financial-dashboard`，輸出為 `./dist`；腳本與 CI 可用 `CLOUDFLARE_PROJECT_NAME` 覆寫目標名稱。使用自訂名稱時，本機與 GitHub Variable 必須填入同一名稱。腳本不自動建立專案，也不忽略建立或部署錯誤。
+
+不要為同一專案另開 Cloudflare Git 整合的自動建置，以免與這份 Actions 流程重複部署。
+
+### 2. 設定 GitHub Actions
+
+Repository → **Settings → Secrets and variables → Actions**：
+
+| 類型 | 名稱 | 內容 |
+| --- | --- | --- |
+| Repository Secret | `CLOUDFLARE_API_TOKEN` | 目標帳號的 Pages Edit Token |
+| Repository Secret | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
+| Repository Variable（選用） | `CLOUDFLARE_PROJECT_NAME` | 實際 Pages 專案名稱，未設時讀取 wrangler.jsonc |
+
+`.github/workflows/deploy.yml` 執行 Node.js 24 安裝、合成資料測試、部署腳本驗證及正式建置：
+
+- 推送至 `main`：驗證成功後部署正式環境。
+- PR 目標為 `main`：只驗證，不讀取部署憑證、不上傳，包括 fork PR。
+- Actions → **Validate and deploy Cloudflare Pages → Run workflow**：選 `main` 才會部署；其他分支只驗證。
+
+正式部署排隊執行，不同 PR 的驗證互不阻塞。缺少 Secrets 會使部署步驟失敗；CI 不會靜默跳過並報成功。Wrangler 回報成功後會列出實際部署網址，主要站點通常為 `https://<專案名稱>.pages.dev`。設定檔與變更須先經人工審核合併至 `main`，此流程才會生效。
+
+### 3. 本機手動部署與乾跑
+
+腳本從自己的位置找到專案根目錄，可由其他目錄透過絕對路徑呼叫。遠端部署先執行 `npm test`、`npm run build`，再將 `dist/` 發布至 **main 正式環境**；任何一步失敗均立即停止並傳回非零退出碼。部署的是本機目前的程式碼，請先確認工作目錄及變更內容。
+
+Windows：
+
+```powershell
+# 不要求憑證，也不呼叫 Cloudflare；仍會執行測試及建置
+pwsh -File .\scripts\deploy-remote.ps1 -DryRun
+# 使用上一節設定的環境變數，實際發布
+pwsh -File .\scripts\deploy-remote.ps1
+```
+
+Linux：
+
+```bash
+bash scripts/deploy-remote.sh --dry-run
+bash scripts/deploy-remote.sh
+```
+
+不要用 Wrangler 的 `pages project create` 或任何真正部署命令驗證乾跑；上述 DryRun 是腳本提供的離線模式，不是 Wrangler 的選項。
+
+使用後可移除工作階段憑證：PowerShell 執行 `Remove-Item Env:CLOUDFLARE_API_TOKEN, Env:CLOUDFLARE_ACCOUNT_ID`；Bash 執行 `unset CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID`。腳本不會自動載入 `.env` 或將憑證寫入硬碟。
+
+### 4. 本機模擬 Pages
+
+不需 Token；每次重新建置後在 `127.0.0.1:8788` 提供本機服務，不上傳任何資源。按 Ctrl+C 停止。
+
+```powershell
+pwsh -File .\scripts\deploy-local.ps1
+pwsh -File .\scripts\deploy-local.ps1 -Port 8790
+```
+
+```bash
+bash scripts/deploy-local.sh
+bash scripts/deploy-local.sh --port 8790
+```
+
+開發介面使用 `npm run dev`；只需預覽靜態建置也可使用 `npm run preview`。
+
+### 5. 排查、回復與資料隔離
+
+| 問題 | 處理方式 |
+| --- | --- |
+| npm ci 失敗 | 確認 Node 24、lockfile 與 package.json 一致，SheetJS 官方 CDN 可連線，並帶上 `--allow-remote=root` |
+| 找不到 Wrangler | 不要只安裝 production 依賴；重新執行 `npm ci --allow-remote=root` |
+| 驗證或建置失敗 | 先修復最早失敗的測試／型別錯誤；不跳過檢查上傳舊 dist |
+| 缺少憑證、認證錯誤 | 確認 Secrets 名稱、Token 是否過期，以及 Account ID 是否與 Token 的帳號範圍一致 |
+| Pages 專案不存在 | 先建立 Direct Upload 專案；檢查 `CLOUDFLARE_PROJECT_NAME` 的拼字及帳號 |
+| 部署被判為 preview | 確認 Pages 專案的 production branch 為 main；本流程明確傳入 `--branch main` |
+| 本機埠已占用 | 使用 `-Port`／`--port` 指定其他 1024–65535 埠 |
+| Wrangler 原生執行檔無法執行 | 檢查作業系統／架構與 npm 可選依賴、安裝腳本限制；重新安裝依賴，不要改用未固定的全域 CLI |
+
+需要回復網站時，在 Cloudflare **Workers & Pages → 專案 → Deployments** 選擇先前成功的正式部署，再使用 **Rollback to this deployment**。回復只切換雲端版本；後續 main 推送仍會重新部署程式碼，請同步以 Git revert 修正要保留的版本。參考 [Cloudflare 回復文件](https://developers.cloudflare.com/pages/configuration/rollbacks/)。
+
+財務資料仍只保存在使用者瀏覽器。localStorage 依 origin（協定、網域與埠）隔離：localhost、pages.dev、自訂網域及不同預覽網址不共用紀錄，切換網址需重新匯入。同一 origin 的一般部署不會主動清除既有財務紀錄。
+
+部署腳本的離線整合測試可執行 `npm run test:deploy`。它使用含空白的暫存專案與替身 npm／Wrangler，不連線發布；Linux 驗證 Bash，Windows 驗證 PowerShell，並在有 WSL 或 Git Bash 時加驗 Bash。
 
 ## 操作
 

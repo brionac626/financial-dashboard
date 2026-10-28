@@ -23,7 +23,7 @@
 | `npm run build` | 型別檢查並產生 `dist/` |
 | `npm run preview` | 預覽建置成果 |
 
-目前沒有 Makefile、跨平台部署腳本或 CI/CD 設定；新增流程時須同步更新文件，不直接沿用模板的部署指令。
+Cloudflare Pages 採 Direct Upload；`.github/workflows/deploy.yml` 於 main 推送或從 main 手動觸發時部署，PR 僅驗證。`scripts/deploy-remote.ps1`／`.sh` 執行測試、建置與發布，支援 DryRun；`scripts/deploy-local.ps1`／`.sh` 重新建置並啟動本機 Pages 預覽。設定見 `wrangler.jsonc`，Wrangler 版本固定於 lockfile。執行 `npm run test:deploy` 驗證腳本；首次建立專案、憑證及使用方式見 README。沒有 Makefile。修改部署流程須同步更新文件，禁止於離線驗證實際上傳。
 
 ## 編碼與引用規範
 使用兩空白縮排、TypeScript 單引號與分號，禁止新增 `any`。元件使用 PascalCase，函式與變數使用 camelCase；共用型別集中於 `src/types/`，計算邏輯與 UI 分離。
