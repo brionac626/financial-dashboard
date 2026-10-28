@@ -1,0 +1,8 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { Dashboard } from '@/components/islands/Dashboard';
+---
+<BaseLayout>
+  <Dashboard client:load />
+  <noscript><p class="notice">請開啟 JavaScript 以在瀏覽器內解析 Excel 與查看圖表。所有檔案都留在你的裝置。</p></noscript>
+</BaseLayout>

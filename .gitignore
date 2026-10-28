@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build outputs
+dist/
+build/
+.astro/
+
+# Environment files
+.env
+.env.production
+.env.local
+.env.*.local
+!.env.example
+
+# Cloudflare Wrangler
+.wrangler/
+
+# IDE & Editors
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Git Worktrees (internal temporary agent worktrees)
+.worktree/
+.worktrees/
+# Browser QA files and screenshots
+tests/.generated/
+
+# test data
+*.xlsx
