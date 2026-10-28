@@ -46,27 +46,45 @@ npm ci --allow-remote=root
 
 在 Cloudflare 建立僅限目標帳號的 API Token，權限為 **Account → Cloudflare Pages → Edit**，並取得該帳號的 Account ID。這兩項只用於部署程序，不放入 `PUBLIC_*` 變數、前端程式或提交檔案。
 
-設定本次終端工作階段憑證。Windows 可隱藏輸入 Token：
+先複製 `.env.example` 為專案根目錄的 `.env`。Windows：
 
 ```powershell
-$env:CLOUDFLARE_ACCOUNT_ID = Read-Host 'Cloudflare Account ID'
-$env:CLOUDFLARE_API_TOKEN = Read-Host 'Cloudflare API Token' -MaskInput
-# 選用：既有專案或名稱已被占用時使用實際名稱
-$env:CLOUDFLARE_PROJECT_NAME = 'financial-dashboard'
-node node_modules/wrangler/bin/wrangler.js pages project create $env:CLOUDFLARE_PROJECT_NAME --production-branch main
+Copy-Item .env.example .env
 ```
 
 Linux：
 
 ```bash
-read -r -p 'Cloudflare Account ID: ' CLOUDFLARE_ACCOUNT_ID
-read -r -s -p 'Cloudflare API Token: ' CLOUDFLARE_API_TOKEN; printf '\n'
-export CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN
-export CLOUDFLARE_PROJECT_NAME=financial-dashboard
-node node_modules/wrangler/bin/wrangler.js pages project create "$CLOUDFLARE_PROJECT_NAME" --production-branch main
+cp .env.example .env
 ```
 
-此建立命令只需執行一次；已有 Direct Upload 專案則略過，確認其正式分支為 `main`。`wrangler.jsonc` 的預設名稱為 `financial-dashboard`，輸出為 `./dist`；腳本與 CI 可用 `CLOUDFLARE_PROJECT_NAME` 覆寫目標名稱。使用自訂名稱時，本機與 GitHub Variable 必須填入同一名稱。腳本不自動建立專案，也不忽略建立或部署錯誤。
+用文字編輯器填寫 `.env`，例如下列佔位值；已有 `.env` 時直接編輯，勿重新複製覆蓋：
+
+```dotenv
+CLOUDFLARE_API_TOKEN=your-pages-edit-token
+CLOUDFLARE_ACCOUNT_ID=your-account-id
+CLOUDFLARE_PROJECT_NAME=financial-dashboard
+```
+
+確認專案名稱後執行首次設定腳本：
+
+```powershell
+pwsh -File .\scripts\setup-pages.ps1 -DryRun
+pwsh -File .\scripts\setup-pages.ps1
+```
+
+```bash
+bash scripts/setup-pages.sh --dry-run
+bash scripts/setup-pages.sh
+```
+
+`setup-pages` 只建立 Direct Upload 專案並指定正式分支 `main`，不執行測試、建置或上傳網站。乾跑不要求 Token、不呼叫 Cloudflare；成功建立後再執行下一節的遠端部署。已有專案則略過 setup，確認其正式分支為 `main`；重複建立或認證失敗會保留 Wrangler 原始錯誤及退出碼，不假裝成功。
+
+建立及遠端部署腳本共用 `scripts/pages.mjs` 與 `scripts/pages-config.mjs`，無論從哪個目錄啟動，都讀取專案根目錄 `.env`。優先順序為：**非空白的終端環境變數 → `.env`**；兩者未指定專案名稱時才使用 `wrangler.jsonc` 的 `name`。空白字串不覆寫下一層設定。`.env` 不存在時仍可完全使用終端變數；缺少憑證只會提示變數名稱。
+
+解析使用 Node.js 24 內建 `util.parseEnv`，支援註解、引號與 CRLF，只採用上述三個 Cloudflare 設定，不載入 `.env.local`／`.env.production`，也不執行 Bash `source`、PowerShell 表達式或 `$VAR` 展開。值含 `#` 或空格時請加引號。`wrangler.jsonc` 的輸出仍為 `./dist`；自訂名稱須與 GitHub Variable 一致。
+
+`.env` 已被 Git 忽略，`.env.example` 只保存空白憑證範本。載入值不寫回終端、不作為命令列參數、不輸出 Token；僅以子程序環境交給 Wrangler，npm 測試及建置的啟動環境不帶 Cloudflare 設定。不要將憑證改名為 `PUBLIC_*` 或複製至 `public/`。不要執行已填真實 Token 的 `.env` 作為 shell 腳本。
 
 不要為同一專案另開 Cloudflare Git 整合的自動建置，以免與這份 Actions 流程重複部署。
 
@@ -97,7 +115,7 @@ Windows：
 ```powershell
 # 不要求憑證，也不呼叫 Cloudflare；仍會執行測試及建置
 pwsh -File .\scripts\deploy-remote.ps1 -DryRun
-# 使用上一節設定的環境變數，實際發布
+# 自動讀取根目錄 .env（終端同名非空白設定優先），實際發布
 pwsh -File .\scripts\deploy-remote.ps1
 ```
 
@@ -110,11 +128,11 @@ bash scripts/deploy-remote.sh
 
 不要用 Wrangler 的 `pages project create` 或任何真正部署命令驗證乾跑；上述 DryRun 是腳本提供的離線模式，不是 Wrangler 的選項。
 
-使用後可移除工作階段憑證：PowerShell 執行 `Remove-Item Env:CLOUDFLARE_API_TOKEN, Env:CLOUDFLARE_ACCOUNT_ID`；Bash 執行 `unset CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID`。腳本不會自動載入 `.env` 或將憑證寫入硬碟。
+若另外設定過終端憑證，使用後可移除：PowerShell 執行 `Remove-Item Env:CLOUDFLARE_API_TOKEN, Env:CLOUDFLARE_ACCOUNT_ID`；Bash 執行 `unset CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID`。腳本不修改呼叫端的終端環境；`.env` 中手動填寫的設定仍保留於本機。
 
 ### 4. 本機模擬 Pages
 
-不需 Token；每次重新建置後在 `127.0.0.1:8788` 提供本機服務，不上傳任何資源。按 Ctrl+C 停止。
+不需 Token；預覽腳本不加入部署憑證載入步驟。每次重新建置後在 `127.0.0.1:8788` 提供本機服務，不上傳任何資源。按 Ctrl+C 停止。
 
 ```powershell
 pwsh -File .\scripts\deploy-local.ps1
@@ -135,8 +153,9 @@ bash scripts/deploy-local.sh --port 8790
 | npm ci 失敗 | 確認 Node 24、lockfile 與 package.json 一致，SheetJS 官方 CDN 可連線，並帶上 `--allow-remote=root` |
 | 找不到 Wrangler | 不要只安裝 production 依賴；重新執行 `npm ci --allow-remote=root` |
 | 驗證或建置失敗 | 先修復最早失敗的測試／型別錯誤；不跳過檢查上傳舊 dist |
-| 缺少憑證、認證錯誤 | 確認 Secrets 名稱、Token 是否過期，以及 Account ID 是否與 Token 的帳號範圍一致 |
-| Pages 專案不存在 | 先建立 Direct Upload 專案；檢查 `CLOUDFLARE_PROJECT_NAME` 的拼字及帳號 |
+| 缺少憑證、認證錯誤 | 本機檢查根目錄 .env 與終端覆寫；CI 檢查 Secrets。確認 Token 未過期，Account ID 與 Token 的帳號範圍一致 |
+| Pages 專案不存在 | 先執行 setup-pages 腳本；檢查 CLOUDFLARE_PROJECT_NAME 的拼字及帳號 |
+| 修改 .env 後目標仍沒改變 | 檢查終端是否已有同名非空白變數，優先度高於 .env |
 | 部署被判為 preview | 確認 Pages 專案的 production branch 為 main；本流程明確傳入 `--branch main` |
 | 本機埠已占用 | 使用 `-Port`／`--port` 指定其他 1024–65535 埠 |
 | Wrangler 原生執行檔無法執行 | 檢查作業系統／架構與 npm 可選依賴、安裝腳本限制；重新安裝依賴，不要改用未固定的全域 CLI |
@@ -145,7 +164,7 @@ bash scripts/deploy-local.sh --port 8790
 
 財務資料仍只保存在使用者瀏覽器。localStorage 依 origin（協定、網域與埠）隔離：localhost、pages.dev、自訂網域及不同預覽網址不共用紀錄，切換網址需重新匯入。同一 origin 的一般部署不會主動清除既有財務紀錄。
 
-部署腳本的離線整合測試可執行 `npm run test:deploy`。它使用含空白的暫存專案與替身 npm／Wrangler，不連線發布；Linux 驗證 Bash，Windows 驗證 PowerShell，並在有 WSL 或 Git Bash 時加驗 Bash。
+部署腳本的離線整合測試可執行 `npm run test:deploy`。它使用含空白的暫存專案、合成 `.env` 與替身 npm／Wrangler，不連線建立或發布；Linux 驗證 Bash，Windows 驗證 PowerShell，並在有 WSL Node 24 或 Git Bash 時加驗 Bash。WSL 可透過 `PAGES_TEST_LINUX_NODE` 指定 Linux Node 的完整路徑。
 
 ## 操作
 
